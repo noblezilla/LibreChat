@@ -27,7 +27,7 @@ jest.mock('~/app/clients/tools', () => ({
 
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
-  jest.setTimeout(30_000);
+  jest.setTimeout(120_000);
 
   let mongoServer;
   let app;

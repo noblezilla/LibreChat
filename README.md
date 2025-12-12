@@ -158,6 +158,16 @@ Click on the thumbnail to open the video☝️
   - **Documentation:** [librechat.ai/docs](https://librechat.ai/docs)
   - **Blog:** [librechat.ai/blog](https://librechat.ai/blog)
 
+## Ontario Building Code Configuration
+
+This fork pins every conversation to the Ontario Building Code Buddy experience. To keep the OpenAI Responses API grounded in your official reference pack:
+
+- Set `ONTARIO_OPENAI_MODEL` in your `.env` if you rename the custom GPT inside OpenAI (default: `gpt-5`).
+- Set `ONTARIO_OPENAI_FILE_ID` to the storage file that contains the Ontario Building Code embeddings (default: `file-CTN168WfihPUgthrxvCQsy`).
+- Restart `npm run backend:dev` (or `docker compose restart api`) after changing these values so the middleware can rebuild the OpenAI client with the new attachments.
+
+When these variables are present, LibreChat automatically enables the Responses API, attaches the storage file to the latest user turn, and instructs the model to cite the retrieved sections in its reply.
+
 ---
 
 ## 📝 Changelog

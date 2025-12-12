@@ -11,7 +11,6 @@ import {
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { useGetStartupConfig } from '~/data-provider';
 import { normalizeLayout } from '~/utils';
-import SidePanel from './SidePanel';
 import store from '~/store';
 
 interface SidePanelProps {
@@ -104,6 +103,8 @@ const SidePanelGroup = memo(
       panelRef.current?.collapse();
     }, []);
 
+    const shouldRenderSidePanel = false;
+
     return (
       <>
         <ResizablePanelGroup
@@ -132,28 +133,14 @@ const SidePanelGroup = memo(
               </ResizablePanel>
             </>
           )}
-          {!hideSidePanel && interfaceConfig.sidePanel === true && (
-            <SidePanel
-              panelRef={panelRef}
-              minSize={minSize}
-              setMinSize={setMinSize}
-              isCollapsed={isCollapsed}
-              setIsCollapsed={setIsCollapsed}
-              collapsedSize={collapsedSize}
-              setCollapsedSize={setCollapsedSize}
-              fullCollapse={fullCollapse}
-              setFullCollapse={setFullCollapse}
-              defaultSize={currentLayout[currentLayout.length - 1]}
-              hasArtifacts={artifacts != null}
-              interfaceConfig={interfaceConfig}
-            />
-          )}
         </ResizablePanelGroup>
-        <button
-          aria-label="Close right side panel"
-          className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
-          onClick={handleClosePanel}
-        />
+        {shouldRenderSidePanel && (
+          <button
+            aria-label="Close right side panel"
+            className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
+            onClick={handleClosePanel}
+          />
+        )}
       </>
     );
   },

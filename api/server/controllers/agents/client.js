@@ -940,6 +940,28 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
+      try {
+        // eslint-disable-next-line no-console
+        console.log(
+          '[TRACE] agent run config (pre-run.processStream):',
+          JSON.stringify(
+            {
+              agentId: this.options.agent?.id,
+              provider: this.options.agent?.provider,
+              model: this.options.agent?.model,
+              model_parameters: this.options.agent?.model_parameters,
+              tools: this.options.agent?.tools,
+              configurable: config?.configurable,
+              messagesCount: messages?.length ?? 0,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch (err) {
+        logger.debug('Failed to log agent run config', err);
+      }
+
       await runAgent(this.options.agent, initialMessages);
       let finalContentStart = 0;
       if (

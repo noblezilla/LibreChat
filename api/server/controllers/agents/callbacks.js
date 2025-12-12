@@ -111,10 +111,52 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
     );
   }
+
+  const safeStringify = (value) => {
+    try {
+      return JSON.stringify(value);
+    } catch (err) {
+      return String(value);
+    }
+  };
+
+  const streamHandler = new ChatModelStreamHandler();
+  const modelEndHandler = new ModelEndHandler(collectedUsage);
+
+  const previewText = (val) => {
+    if (!val) return '';
+    const text =
+      typeof val === 'string'
+        ? val
+        : val.text ??
+          val.delta ??
+          (Array.isArray(val.content) ? val.content.map((c) => c.text ?? c.delta ?? '').join(' ') : '');
+    return typeof text === 'string' ? text.slice(0, 200) : '';
+  };
+
   const handlers = {
-    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
+    [GraphEvents.CHAT_MODEL_END]: {
+      handle: (event, data, metadata, graph) => {
+        logger.info(
+          `[Ontario] CHAT_MODEL_END meta=${JSON.stringify(metadata ?? {})} outputKeys=${
+            data ? Object.keys(data) : []
+          }`,
+        );
+        return modelEndHandler.handle(event, data, metadata, graph);
+      },
+    },
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback),
-    [GraphEvents.CHAT_MODEL_STREAM]: new ChatModelStreamHandler(),
+    [GraphEvents.CHAT_MODEL_STREAM]: {
+      handle: (event, data, metadata, graph) => {
+        const preview = previewText(data?.delta ?? data);
+        logger.info(
+          `[Ontario] CHAT_MODEL_STREAM meta=${JSON.stringify(metadata ?? {})} deltaKeys=${
+            data ? Object.keys(data) : []
+          } preview="${preview}"`,
+        );
+        return streamHandler.handle(event, data, metadata, graph);
+      },
+    },
     [GraphEvents.ON_RUN_STEP]: {
       /**
        * Handle ON_RUN_STEP event.
@@ -123,6 +165,11 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: (event, data, metadata) => {
+        logger.info(
+          `[Ontario] ON_RUN_STEP meta=${JSON.stringify(metadata ?? {})} detailType=${
+            data?.stepDetails?.type
+          } resultKeys=${data?.result ? Object.keys(data.result) : []}`,
+        );
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           sendEvent(res, { event, data });
         } else if (metadata?.last_agent_index === metadata?.agent_index) {
@@ -152,6 +199,11 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: (event, data, metadata) => {
+        logger.info(
+          `[Ontario] ON_RUN_STEP_DELTA meta=${JSON.stringify(metadata ?? {})} deltaType=${
+            data?.delta?.type
+          } preview="${previewText(data?.delta)}"`,
+        );
         if (data?.delta.type === StepTypes.TOOL_CALLS) {
           sendEvent(res, { event, data });
         } else if (metadata?.last_agent_index === metadata?.agent_index) {
@@ -170,6 +222,11 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: (event, data, metadata) => {
+        logger.info(
+          `[Ontario] ON_RUN_STEP_COMPLETED meta=${JSON.stringify(metadata ?? {})} hasResult=${
+            data?.result != null
+          }`,
+        );
         if (data?.result != null) {
           sendEvent(res, { event, data });
         } else if (metadata?.last_agent_index === metadata?.agent_index) {
@@ -188,6 +245,10 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: (event, data, metadata) => {
+        const preview = previewText(data?.delta ?? data);
+        logger.info(
+          `[Ontario] ON_MESSAGE_DELTA meta=${JSON.stringify(metadata ?? {})} preview="${preview}"`,
+        );
         if (metadata?.last_agent_index === metadata?.agent_index) {
           sendEvent(res, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
@@ -204,6 +265,10 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: (event, data, metadata) => {
+        const preview = safeStringify(data?.delta)?.slice(0, 200);
+        logger.info(
+          `[Ontario] ON_REASONING_DELTA meta=${JSON.stringify(metadata ?? {})} preview="${preview}"`,
+        );
         if (metadata?.last_agent_index === metadata?.agent_index) {
           sendEvent(res, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {

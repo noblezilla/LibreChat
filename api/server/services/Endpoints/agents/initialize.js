@@ -117,6 +117,25 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     isInitialAgent: true,
   });
 
+  try {
+    // eslint-disable-next-line no-console
+    console.log(
+      '[TRACE] primaryConfig full:',
+      JSON.stringify(primaryConfig, null, 2),
+    );
+    logger.info('[Ontario] Agent primaryConfig summary', {
+      provider: primaryConfig.provider,
+      model: primaryConfig.model,
+      endpoint: primaryConfig.endpoint,
+      toolNames: Array.isArray(primaryConfig.tools)
+        ? primaryConfig.tools.map((t) => t?.name || t?.type || 'unknown')
+        : [],
+      model_parameters: JSON.stringify(primaryConfig.model_parameters),
+    });
+  } catch (e) {
+    /* ignore logging errors */
+  }
+
   const agent_ids = primaryConfig.agent_ids;
   let userMCPAuthMap = primaryConfig.userMCPAuthMap;
   if (agent_ids?.length) {

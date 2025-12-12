@@ -133,6 +133,19 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: String,
     },
     attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    citations: {
+      type: [
+        {
+          id: { type: String, required: true },
+          label: { type: String },
+          section: { type: String },
+          snippet: { type: String },
+          page: { type: Number },
+          url: { type: String },
+        },
+      ],
+      default: undefined,
+    },
     /*
     attachments: {
       type: [

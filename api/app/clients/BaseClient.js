@@ -26,6 +26,7 @@ const { truncateToolCallOutputs } = require('./prompts');
 const countTokens = require('~/server/utils/countTokens');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
+const { extractAnnotationCitations } = require('~/server/utils/citations');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -737,6 +738,18 @@ class BaseClient {
       }
     } else if (Array.isArray(completion)) {
       responseMessage.text = completion.join('');
+    }
+
+    const { text: normalizedText, citations } = extractAnnotationCitations({
+      text: responseMessage.text,
+      content: responseMessage.content,
+    });
+
+    if (typeof normalizedText === 'string' && normalizedText.trim() !== '') {
+      responseMessage.text = normalizedText;
+    }
+    if (Array.isArray(citations) && citations.length > 0) {
+      responseMessage.citations = citations;
     }
 
     if (

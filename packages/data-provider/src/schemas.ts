@@ -597,6 +597,18 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().nullable().optional(),
+  citations: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string().optional(),
+        section: z.string().optional(),
+        snippet: z.string().optional(),
+        page: z.union([z.number(), z.string()]).optional(),
+        url: z.string().optional(),
+      }),
+    )
+    .optional(),
   feedback: feedbackSchema.optional(),
 });
 

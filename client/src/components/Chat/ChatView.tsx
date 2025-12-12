@@ -14,7 +14,6 @@ import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
-import Header from './Header';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -80,7 +79,12 @@ function ChatView({ index = 0 }: { index?: number }) {
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
             <div className="flex h-full w-full flex-col">
-              {!isLoading && <Header />}
+              <div className="px-4 py-3 text-lg font-semibold text-text-primary">
+                Ontario Building Code Buddy
+              </div>
+              <div className="px-4 pb-2 text-sm text-text-secondary">
+                Answers are limited to the Ontario Building Code and include page-cited references.
+              </div>
               <>
                 <div
                   className={cn(

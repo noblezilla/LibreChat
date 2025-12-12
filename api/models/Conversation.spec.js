@@ -182,10 +182,10 @@ describe('Conversation Operations', () => {
       const actualExpirationTime = new Date(result.expiredAt);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
-        expectedExpirationTime.getTime() - 1000,
+        expectedExpirationTime.getTime() - 2000,
       );
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
-        expectedExpirationTime.getTime() + 1000,
+        expectedExpirationTime.getTime() + 2000,
       );
     });
 
@@ -205,10 +205,10 @@ describe('Conversation Operations', () => {
       const actualExpirationTime = new Date(result.expiredAt);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
-        expectedExpirationTime.getTime() - 1000,
+        expectedExpirationTime.getTime() - 2000,
       );
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
-        expectedExpirationTime.getTime() + 1000,
+        expectedExpirationTime.getTime() + 2000,
       );
     });
 

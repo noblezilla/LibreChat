@@ -43,6 +43,8 @@ const { runTitleChain } = require('./chains');
 const { extractBaseURL } = require('~/utils');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
+const DEFAULT_VECTOR_STORE_ID =
+  process.env.ONTARIO_OPENAI_VECTOR_STORE_ID || 'vs_693860848bc48191bccb7c1d197f488f';
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -65,6 +67,9 @@ class OpenAIClient extends BaseClient {
     this.isOmni;
     /** @type {SplitStreamHandler | undefined} */
     this.streamHandler;
+    /** @type {string | undefined} */
+    // For vector-store-only mode, avoid attaching Ontario file IDs by default
+    this.ontarioFileId = undefined;
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -86,6 +91,8 @@ class OpenAIClient extends BaseClient {
     if (this.options.openaiApiKey) {
       this.apiKey = this.options.openaiApiKey;
     }
+
+    logger.warn('[OpenAIClient] setOptions modelOptions', this.options.modelOptions);
 
     this.modelOptions = Object.assign(
       {
@@ -201,6 +208,8 @@ class OpenAIClient extends BaseClient {
 
     this.userLabel = this.options.userLabel || 'User';
     this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
+    // Vector-store only: do not pull Ontario file ID from options/env
+    this.ontarioFileId = undefined;
 
     this.setupTokens();
 
@@ -1049,7 +1058,9 @@ ${convo}
     };
   }
 
-  async chatCompletion({ payload, onProgress, abortController = null }) {
+  async chatCompletion({ payload, onProgress, abortController = null, returnRaw = false }) {
+    // eslint-disable-next-line no-console
+    console.log('[TRACE] chatCompletion entry');
     const appConfig = this.options.req?.config;
     let error = null;
     let intermediateReply = [];
@@ -1064,7 +1075,9 @@ ${convo}
       if (typeof onProgress === 'function') {
         modelOptions.stream = true;
       }
-      if (this.isChatCompletion) {
+      if (modelOptions.useResponsesApi === true) {
+        // Responses API formatting handled separately
+      } else if (this.isChatCompletion) {
         modelOptions.messages = payload;
       } else {
         modelOptions.prompt = payload;
@@ -1177,6 +1190,31 @@ ${convo}
         apiKey: this.apiKey,
         ...opts,
       });
+      // Log outgoing chat/completions request params for debugging
+      try {
+        console.log(
+          '[TRACE] chatCompletion outbound params:',
+          JSON.stringify({ modelOptions, baseURL: opts.baseURL, headers: opts.defaultHeaders }, null, 2),
+        );
+        logger.info('[Ontario] chatCompletion outbound', {
+          modelOptions: JSON.stringify(modelOptions),
+          baseURL: opts.baseURL,
+        });
+      } catch (e) {
+        /* ignore logging errors */
+      }
+
+      if (modelOptions.useResponsesApi === true) {
+        // Force Responses API path; never fall back to chat when requested
+        return await this.handleResponsesApi({
+          openai,
+          modelOptions,
+          payload,
+          onProgress,
+          abortController,
+          returnRaw,
+        });
+      }
 
       /* Re-orders system message to the top of the messages payload, as not allowed anywhere else */
       if (modelOptions.messages && (opts.baseURL.includes('api.mistral.ai') || this.isOllama)) {
@@ -1304,9 +1342,12 @@ ${convo}
       intermediateReply = this.streamHandler.tokens;
 
       if (modelOptions.stream) {
+        // eslint-disable-next-line no-console
+        console.log('[TRACE] chatCompletion before chat.completions.stream');
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
         });
+        let loggedFirstChunk = false;
         /** @type {OpenAI.OpenAI.CompletionCreateParamsStreaming} */
         const params = {
           ...modelOptions,
@@ -1314,6 +1355,12 @@ ${convo}
         };
         const stream = await openai.chat.completions
           .stream(params)
+          // eslint-disable-next-line no-console
+          .on('connect', () => console.log('[TRACE] chatCompletion stream connect'))
+          // eslint-disable-next-line no-console
+          .on('end', () => console.log('[TRACE] chatCompletion stream end'))
+          // eslint-disable-next-line no-console
+          .on('close', () => console.log('[TRACE] chatCompletion stream close'))
           .on('abort', () => {
             /* Do nothing here */
           })
@@ -1321,6 +1368,11 @@ ${convo}
             handleOpenAIErrors(err, errorCallback, 'stream');
           })
           .on('finalChatCompletion', async (finalChatCompletion) => {
+            // eslint-disable-next-line no-console
+            console.log(
+              '[OpenAIClient] RAW chat.completions finalChatCompletion (stream, full):',
+              JSON.stringify(finalChatCompletion, null, 2),
+            );
             const finalMessage = finalChatCompletion?.choices?.[0]?.message;
             if (!finalMessage) {
               return;
@@ -1368,6 +1420,22 @@ ${convo}
               }
             });
           }
+          if (!loggedFirstChunk) {
+            // eslint-disable-next-line no-console
+            console.log(
+              '[OpenAIClient] FIRST chat.completions stream chunk (full):',
+              JSON.stringify(chunk, null, 2),
+            );
+            loggedFirstChunk = true;
+          }
+          // Log every chunk to backend logs for visibility
+          try {
+            logger.info('[Ontario] OpenAI chat stream chunk', {
+              chunk: JSON.stringify(chunk),
+            });
+          } catch (e) {
+            /* ignore logging errors */
+          }
           this.streamHandler.handle(chunk);
           if (abortController.signal.aborted) {
             stream.controller.abort();
@@ -1383,10 +1451,26 @@ ${convo}
           chatCompletion = await stream.finalChatCompletion().catch((err) => {
             handleOpenAIErrors(err, errorCallback, 'finalChatCompletion');
           });
+          if (chatCompletion) {
+            // eslint-disable-next-line no-console
+            console.log(
+              '[OpenAIClient] RAW chat.completions response (stream final, full):',
+              JSON.stringify(chatCompletion, null, 2),
+            );
+            try {
+              logger.info('[Ontario] OpenAI chat stream final', {
+                response: JSON.stringify(chatCompletion),
+              });
+            } catch (e) {
+              /* ignore logging errors */
+            }
+          }
         }
       }
       // regular completion
       else {
+        // eslint-disable-next-line no-console
+        console.log('[TRACE] chatCompletion before chat.completions.create');
         chatCompletion = await openai.chat.completions
           .create({
             ...modelOptions,
@@ -1394,6 +1478,22 @@ ${convo}
           .catch((err) => {
             handleOpenAIErrors(err, errorCallback, 'create');
           });
+        // eslint-disable-next-line no-console
+        console.log('[TRACE] chatCompletion after chat.completions.create');
+        if (chatCompletion) {
+          // eslint-disable-next-line no-console
+          console.log(
+            '[OpenAIClient] RAW chat.completions response (non-stream, full):',
+            JSON.stringify(chatCompletion, null, 2),
+          );
+          try {
+            logger.info('[Ontario] OpenAI chat completion (non-stream)', {
+              response: JSON.stringify(chatCompletion),
+            });
+          } catch (e) {
+            /* ignore logging errors */
+          }
+        }
       }
 
       if (openai.abortHandler && abortController.signal) {
@@ -1493,6 +1593,367 @@ ${convo}
         throw err;
       }
     }
+  }
+
+  sanitizeResponsesOptions(modelOptions, shouldStream) {
+    const requestBody = { ...modelOptions };
+    delete requestBody.messages;
+    delete requestBody.prompt;
+    delete requestBody.stream_options;
+    delete requestBody.useResponsesApi;
+    delete requestBody.promptPrefix;
+    delete requestBody.resendFiles;
+    delete requestBody.model_parameters;
+    delete requestBody.endpoint;
+    delete requestBody.endpointType;
+    delete requestBody.tool_resources;
+    if (!shouldStream) {
+      delete requestBody.stream;
+    } else {
+      requestBody.stream = true;
+    }
+    if (requestBody.max_tokens != null && requestBody.max_output_tokens == null) {
+      requestBody.max_output_tokens = requestBody.max_tokens;
+    }
+    if (requestBody.maxTokens != null && requestBody.max_output_tokens == null) {
+      requestBody.max_output_tokens = requestBody.maxTokens;
+    }
+    delete requestBody.max_tokens;
+    delete requestBody.maxTokens;
+    if (requestBody.modelKwargs && typeof requestBody.modelKwargs === 'object') {
+      Object.assign(requestBody, requestBody.modelKwargs);
+      delete requestBody.modelKwargs;
+    }
+    return requestBody;
+  }
+
+  formatResponsesMessages(payload = []) {
+    return payload.map((message = {}) => {
+      const role = message.role || 'user';
+      const content = this.formatResponseContent(message);
+      return {
+        role,
+        content,
+      };
+    });
+  }
+
+  formatResponseContent(message) {
+    const defaultType = message.role === 'assistant' ? 'output_text' : 'input_text';
+    const { content } = message;
+    if (Array.isArray(content)) {
+      const parts = content
+        .map((part) => this.normalizeResponsePart(part, defaultType, message.role))
+        .filter(Boolean);
+      if (parts.length > 0) {
+        return parts;
+      }
+    } else if (typeof content === 'string') {
+      return [{ type: defaultType, text: content }];
+    }
+    const fallback =
+      typeof content === 'object' && content != null ? JSON.stringify(content) : String(content ?? '');
+    return [{ type: defaultType, text: fallback }];
+  }
+
+  normalizeResponsePart(part, defaultType, role) {
+    if (part == null) {
+      return null;
+    }
+    if (typeof part === 'string') {
+      return { type: defaultType, text: part };
+    }
+    if (typeof part !== 'object') {
+      return null;
+    }
+    if (part.type === 'text' || part.type === ContentTypes.TEXT) {
+      return { type: defaultType, text: part.text ?? '' };
+    }
+    if (part.type === 'input_text' || part.type === 'output_text') {
+      return { type: part.type, text: part.text ?? '' };
+    }
+    if (part.type === 'image_url') {
+      const url =
+        typeof part.image_url === 'string'
+          ? part.image_url
+          : part.image_url?.url ?? part.image_url?.href;
+      if (!url) {
+        return null;
+      }
+      const imageType = role === 'assistant' ? 'output_image' : 'input_image';
+      return { type: imageType, image_url: url };
+    }
+    if (part.type === ContentTypes.THINK) {
+      return { type: defaultType, text: part[ContentTypes.THINK] ?? '' };
+    }
+    const textValue = part.text ?? part.content ?? JSON.stringify(part);
+    return { type: defaultType, text: typeof textValue === 'string' ? textValue : JSON.stringify(textValue) };
+  }
+
+  ensureFileSearchTool(tools) {
+    if (!Array.isArray(tools) || tools.length === 0) {
+      return [{ type: 'file_search' }];
+    }
+    const exists = tools.some((tool) => tool && typeof tool === 'object' && tool.type === 'file_search');
+    if (exists) {
+      return tools;
+    }
+    return [...tools, { type: 'file_search' }];
+  }
+
+  addOntarioAttachment(inputMessages) {
+    // Vector-store only: do not attach a specific file_id
+    return inputMessages;
+  }
+
+  buildResponsesRequest(modelOptions, payload, shouldStream) {
+    const requestBody = this.sanitizeResponsesOptions(modelOptions, shouldStream);
+    requestBody.input = this.formatResponsesMessages(payload);
+    requestBody.input = this.addOntarioAttachment(requestBody.input);
+    // Embed vector store on the file_search tool itself; drop tool_resources
+    const tools = this.ensureFileSearchTool(requestBody.tools);
+    requestBody.tools = tools.map((tool) =>
+      tool.type === 'file_search'
+        ? Object.assign({}, tool, {
+            vector_store_ids: [DEFAULT_VECTOR_STORE_ID],
+          })
+        : tool,
+    );
+    delete requestBody.tool_resources;
+    /* Debug log to verify file_search attachments */
+    logger.warn(
+      `[OpenAIClient] buildResponsesRequest file_search resources: ${JSON.stringify(requestBody.tool_resources)}`,
+    );
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] buildResponsesRequest tool_resources:', requestBody.tool_resources);
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] buildResponsesRequest tools:', requestBody.tools);
+    return requestBody;
+  }
+
+  extractResponseText(response, fallback = '') {
+    if (!response) {
+      return fallback;
+    }
+    const segments = [];
+    if (Array.isArray(response.output)) {
+      for (const item of response.output) {
+        if (item?.type === 'output_text' && item.text) {
+          segments.push(item.text);
+          continue;
+        }
+        if (item?.type === 'message' && Array.isArray(item.content)) {
+          for (const part of item.content) {
+            if (part?.type === 'output_text' && part.text) {
+              segments.push(part.text);
+            }
+          }
+        }
+      }
+    }
+    return segments.join('') || fallback;
+  }
+
+  async handleResponsesApi({ openai, modelOptions, payload, onProgress, abortController, returnRaw = false }) {
+    // eslint-disable-next-line no-console
+    console.log('[TRACE] handleResponsesApi entry');
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] handleResponsesApi invoked');
+    const shouldStream = modelOptions.stream === true && typeof onProgress === 'function';
+    const requestBody = this.buildResponsesRequest(modelOptions, payload, shouldStream);
+    // eslint-disable-next-line no-console
+    console.log(
+      '[TRACE] handleResponsesApi requestBody (full):',
+      JSON.stringify(requestBody, null, 2),
+    );
+    // Log the tool resources and tools regardless of streaming vs non-streaming
+    const requestPreview = JSON.stringify(
+      {
+        tools: requestBody.tools,
+        tool_resources: requestBody.tool_resources,
+        input: requestBody.input,
+        model: requestBody.model,
+      },
+      null,
+      2,
+    ).slice(0, 2000);
+    logger.warn(`[OpenAIClient] Responses API request preview: ${requestPreview}`);
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] FULL Responses API request to OpenAI:', requestBody);
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] tool_resources sent to OpenAI:', requestBody.tool_resources);
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] tools sent to OpenAI:', requestBody.tools);
+
+    if (shouldStream) {
+      return await this.streamResponses({
+        openai,
+        requestBody,
+        onProgress,
+        abortController,
+      });
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[TRACE] handleResponsesApi before responses.create');
+    const response = await openai.responses.create(requestBody);
+    // eslint-disable-next-line no-console
+    console.log('[TRACE] handleResponsesApi after responses.create');
+    this.usage = response.usage;
+    this.metadata = { finish_reason: response.status };
+    logger.info('[OpenAIClient] Responses API complete response status', {
+      status: response.status,
+      usage: response.usage,
+    });
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] RAW Responses API response (full):', JSON.stringify(response, null, 2));
+    const outputPreview = Array.isArray(response.output)
+      ? JSON.stringify(response.output.slice(0, 2)).slice(0, 2000)
+      : String(response.output).slice(0, 2000);
+    logger.info(`[OpenAIClient] Responses API output preview: ${outputPreview}`);
+    logger.info(`[OpenAIClient] Responses API request preview: ${JSON.stringify(
+      {
+        tools: requestBody.tools,
+        tool_resources: requestBody.tool_resources,
+        input: requestBody.input,
+        model: requestBody.model,
+      },
+      null,
+      2,
+    ).slice(0, 2000)}`);
+    // Explicit console logging to verify tool_resources reach OpenAI
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] tool_resources sent to OpenAI:', requestBody.tool_resources);
+    // eslint-disable-next-line no-console
+    console.log('[OpenAIClient] tools sent to OpenAI:', requestBody.tools);
+    const textOut = this.extractResponseText(response);
+    if (returnRaw) {
+      return { text: textOut, raw: response };
+    }
+    return textOut;
+  }
+
+  async streamResponses({ openai, requestBody, onProgress, abortController }) {
+    console.log('[OpenAIClient] streamResponses invoked');
+    const handlers = createStreamEventHandlers(this.options.res);
+    this.streamHandler = new SplitStreamHandler({
+      reasoningKey: 'reasoning_content',
+      accumulate: true,
+      runId: this.responseMessageId,
+      handlers,
+    });
+
+    let aggregated = '';
+    let stream;
+    let loggedFirstEvent = false;
+    try {
+      // eslint-disable-next-line no-console
+      console.log('[TRACE] handleResponsesApi before responses.stream');
+      stream = await openai.responses.stream(requestBody);
+      // eslint-disable-next-line no-console
+      console.log('[TRACE] handleResponsesApi after responses.stream (stream created)');
+    } catch (err) {
+      throw err;
+    }
+
+    const abortSignal = abortController?.signal;
+    const abortHandler = () => {
+      if (stream?.controller) {
+        stream.controller.abort();
+      }
+    };
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', abortHandler, { once: true });
+    }
+
+    try {
+      for await (const event of stream) {
+        if (!loggedFirstEvent) {
+          // eslint-disable-next-line no-console
+          console.log(
+            '[OpenAIClient] FIRST Responses API stream event (full):',
+            JSON.stringify(event, null, 2),
+          );
+          loggedFirstEvent = true;
+        }
+        try {
+          logger.info('[Ontario] OpenAI Responses API stream event', {
+            event: JSON.stringify(event),
+          });
+        } catch (e) {
+          /* ignore logging errors */
+        }
+        if (event.type === 'response.output_text.delta') {
+          const text = event.delta ?? '';
+          if (!text) {
+            continue;
+          }
+          aggregated += text;
+          this.streamHandler.handle({
+            choices: [
+              {
+                delta: {
+                  content: text,
+                },
+              },
+            ],
+          });
+          if (typeof onProgress === 'function') {
+            onProgress(text);
+          }
+        } else if (event.type === 'response.error') {
+          throw new Error(event.error?.message || 'OpenAI response stream error');
+        }
+      }
+    } finally {
+      if (abortSignal) {
+        abortSignal.removeEventListener('abort', abortHandler);
+      }
+    }
+
+    let finalResponse;
+    try {
+      finalResponse = await stream.finalResponse();
+    } catch (err) {
+      if (err?.message?.includes('abort')) {
+        return aggregated || this.getStreamText();
+      }
+      throw err;
+    }
+
+    this.usage = finalResponse.usage;
+    this.metadata = { finish_reason: finalResponse.status };
+    // eslint-disable-next-line no-console
+    console.log(
+      '[OpenAIClient] RAW Responses API streamed final response (full):',
+      JSON.stringify(finalResponse, null, 2),
+    );
+    try {
+      logger.info('[Ontario] OpenAI Responses API stream final', {
+        response: JSON.stringify(finalResponse),
+      });
+    } catch (e) {
+      /* ignore logging errors */
+    }
+    logger.info('[OpenAIClient] Responses API final response (stream)', {
+      status: finalResponse.status,
+      usage: finalResponse.usage,
+    });
+    const streamPreview = Array.isArray(finalResponse.output)
+      ? JSON.stringify(finalResponse.output.slice(0, 2)).slice(0, 2000)
+      : String(finalResponse.output).slice(0, 2000);
+    logger.info(`[OpenAIClient] Responses API stream output preview: ${streamPreview}`);
+
+    const finalText = this.extractResponseText(finalResponse, aggregated);
+    if (
+      this.streamHandler &&
+      Array.isArray(this.streamHandler.reasoningTokens) &&
+      this.streamHandler.reasoningTokens.length > 0
+    ) {
+      return this.getStreamText();
+    }
+
+    return finalText || aggregated;
   }
 }
 

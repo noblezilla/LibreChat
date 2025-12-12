@@ -10,6 +10,7 @@ import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
+import CitationsBlock from '../CitationsBlock';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -162,6 +163,9 @@ const MessageContent = ({
         text={regularContent}
         {...props}
       />
+      {!message.isCreatedByUser && message.citations?.length ? (
+        <CitationsBlock citations={message.citations} />
+      ) : null}
       {unfinishedMessage}
     </>
   );

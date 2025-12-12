@@ -39,6 +39,18 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 
+function ensureOntarioConfig() {
+  const { NODE_ENV, ONTARIO_OPENAI_FILE_ID } = process.env;
+  if (NODE_ENV === 'production' && !ONTARIO_OPENAI_FILE_ID) {
+    throw new Error('ONTARIO_OPENAI_FILE_ID is required in production for Ontario-only mode');
+  }
+  if (!ONTARIO_OPENAI_FILE_ID) {
+    logger.warn(
+      'ONTARIO_OPENAI_FILE_ID is not set; falling back to the default Ontario storage file ID',
+    );
+  }
+}
+
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
@@ -58,6 +70,7 @@ const startServer = async () => {
   initializeFileStorage(appConfig);
   await performStartupChecks(appConfig);
   await updateInterfacePermissions(appConfig);
+  ensureOntarioConfig();
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');

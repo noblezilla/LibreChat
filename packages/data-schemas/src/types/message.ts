@@ -38,6 +38,14 @@ export interface IMessage extends Document {
   thread_id?: string;
   iconURL?: string;
   attachments?: unknown[];
+  citations?: Array<{
+    id: string;
+    label?: string;
+    section?: string;
+    snippet?: string;
+    page?: number | string;
+    url?: string;
+  }>;
   expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;

@@ -18,6 +18,8 @@ export * from './schemas';
 
 export type TMessages = TMessage[];
 
+export type TCitation = NonNullable<TMessage['citations']>[number];
+
 /* TODO: Cleanup EndpointOption types */
 export type TEndpointOption = Pick<
   TConversation,

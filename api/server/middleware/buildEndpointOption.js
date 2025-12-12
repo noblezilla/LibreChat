@@ -3,18 +3,23 @@ const { logger } = require('@librechat/data-schemas');
 const {
   EndpointURLs,
   EModelEndpoint,
+  Constants,
   isAgentsEndpoint,
   parseCompactConvo,
 } = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
-const { processFiles } = require('~/server/services/Files/process');
 const anthropic = require('~/server/services/Endpoints/anthropic');
 const bedrock = require('~/server/services/Endpoints/bedrock');
 const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const {
+  buildOntarioSystemPrompt,
+  getOntarioModel,
+  getOntarioFileId,
+} = require('~/server/services/prompts/ontario');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
@@ -29,7 +34,23 @@ const buildFunction = {
 };
 
 async function buildEndpointOption(req, res, next) {
+  const ontarioModel = getOntarioModel();
+  req.body.endpoint = EModelEndpoint.openAI;
+  req.body.endpointType = EModelEndpoint.openAI;
+  req.body.agent_id = Constants.EPHEMERAL_AGENT_ID;
+  req.body.model = ontarioModel;
+  req.body.promptPrefix = buildOntarioSystemPrompt();
+  logger.info('[Ontario] Config', {
+    model: ontarioModel,
+    fileId: getOntarioFileId(),
+    vectorStoreId: process.env.ONTARIO_OPENAI_VECTOR_STORE_ID,
+  });
+
   const { endpoint, endpointType } = req.body;
+  if (endpoint !== EModelEndpoint.openAI || endpointType !== EModelEndpoint.openAI) {
+    return handleError(res, { text: 'Only Ontario OpenAI endpoint is allowed' });
+  }
+
   let parsedBody;
   try {
     parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
@@ -75,6 +96,36 @@ async function buildEndpointOption(req, res, next) {
     }
   }
 
+  const vectorStoreId =
+    process.env.ONTARIO_OPENAI_VECTOR_STORE_ID || 'vs_693860848bc48191bccb7c1d197f488f';
+  const fileSearchTool = [{ type: 'file_search' }];
+  const fileSearchResources = {
+    file_search: {
+      vector_store_ids: [vectorStoreId],
+    },
+  };
+
+  parsedBody.promptPrefix = buildOntarioSystemPrompt();
+  parsedBody.model = ontarioModel;
+  parsedBody.model_parameters = Object.assign({}, parsedBody.model_parameters, {
+    model: ontarioModel,
+    useResponsesApi: true,
+    tools: fileSearchTool,
+    tool_choice: 'required',
+    tool_resources: fileSearchResources,
+    modelKwargs: Object.assign({}, parsedBody.model_parameters?.modelKwargs),
+  });
+  parsedBody.useResponsesApi = true;
+  parsedBody.agent_id = Constants.EPHEMERAL_AGENT_ID;
+
+  // Lock down user-provided overrides and unsupported tools/features
+  delete parsedBody.tools;
+  delete parsedBody.plugins;
+  delete parsedBody.functions;
+  delete parsedBody.mcpServers;
+  delete parsedBody.files;
+  delete req.body.files;
+
   try {
     const isAgents =
       isAgentsEndpoint(endpoint) || req.baseUrl.startsWith(EndpointURLs[EModelEndpoint.agents]);
@@ -84,10 +135,26 @@ async function buildEndpointOption(req, res, next) {
 
     // TODO: use object params
     req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
-
-    if (req.body.files && !isAgents) {
-      req.body.endpointOption.attachments = processFiles(req.body.files);
+    if (!req.body.endpointOption.modelOptions) {
+      req.body.endpointOption.modelOptions = {};
     }
+    req.body.endpointOption.modelOptions.model = ontarioModel;
+    req.body.endpointOption.modelOptions.useResponsesApi = true;
+    req.body.endpointOption.modelOptions.tool_choice = 'required';
+    req.body.endpointOption.modelOptions.tools = fileSearchTool;
+    req.body.endpointOption.modelOptions.tool_resources = fileSearchResources;
+    req.body.endpointOption.modelOptions.modelKwargs = Object.assign(
+      {},
+      req.body.endpointOption.modelOptions?.modelKwargs,
+    );
+    // User-provided attachments/uploads are not supported in the Ontario-locked experience.
+    req.body.endpointOption.attachments = [];
+
+    // eslint-disable-next-line no-console
+    console.log(
+      '[Ontario] endpointOption',
+      JSON.stringify(req.body.endpointOption, null, 2),
+    );
 
     next();
   } catch (error) {

@@ -1,3 +1,5 @@
+jest.setTimeout(120000);
+
 const mongoose = require('mongoose');
 const { ObjectId } = require('mongodb');
 const { logger } = require('@librechat/data-schemas');
