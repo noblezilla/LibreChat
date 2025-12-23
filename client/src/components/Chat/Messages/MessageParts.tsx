@@ -11,6 +11,7 @@ import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
+import { ASSISTANT_DISPLAY_NAME, ASSISTANT_MODEL_LABEL } from '~/constants/branding';
 
 export default function Message(props: TMessageProps) {
   const localize = useLocalize();
@@ -39,19 +40,32 @@ export default function Message(props: TMessageProps) {
   const fontSize = useRecoilValue(store.fontSize);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
+  const messageModel = message?.model ?? conversation?.model ?? '';
+  const normalizedModel = messageModel.trim().toLowerCase();
+  const isGPT5Like = normalizedModel === 'gpt-5' || normalizedModel.startsWith('gpt-5');
 
   const name = useMemo(() => {
-    let result = '';
     if (isCreatedByUser === true) {
-      result = localize('com_user_message');
-    } else if (assistant) {
-      result = assistant.name ?? localize('com_ui_assistant');
-    } else if (agent) {
-      result = agent.name ?? localize('com_ui_agent');
+      return localize('com_user_message');
     }
 
-    return result;
-  }, [assistant, agent, isCreatedByUser, localize]);
+    const candidate =
+      assistant?.name ??
+      agent?.name ??
+      (isGPT5Like ? ASSISTANT_MODEL_LABEL : messageModel) ??
+      localize('com_ui_assistant');
+
+    if (!candidate) {
+      return ASSISTANT_DISPLAY_NAME;
+    }
+
+    const normalizedCandidate = candidate.trim().toLowerCase();
+    if (normalizedCandidate === 'gpt-5' || normalizedCandidate === 'chatgpt') {
+      return ASSISTANT_MODEL_LABEL;
+    }
+
+    return candidate;
+  }, [assistant?.name, agent?.name, isCreatedByUser, isGPT5Like, localize, messageModel]);
 
   const iconData: TMessageIcon = useMemo(
     () => ({

@@ -4,6 +4,7 @@ import TagManager from 'react-gtm-module';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { ASSISTANT_DISPLAY_NAME } from '~/constants/branding';
 
 export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
@@ -34,7 +35,7 @@ export default function Footer({ className }: { className?: string }) {
     </a>
   );
 
-  const mainContentParts = ['Ontario Building Code Buddy'];
+  const mainContentParts = [ASSISTANT_DISPLAY_NAME];
 
   useEffect(() => {
     if (config?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {

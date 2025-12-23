@@ -17,6 +17,7 @@ import Landing from './Landing';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
+import { ASSISTANT_DISPLAY_NAME } from '~/constants/branding';
 
 function LoadingSpinner() {
   return (
@@ -80,7 +81,7 @@ function ChatView({ index = 0 }: { index?: number }) {
           <Presentation>
             <div className="flex h-full w-full flex-col">
               <div className="px-4 py-3 text-lg font-semibold text-text-primary">
-                Ontario Building Code Buddy
+                {ASSISTANT_DISPLAY_NAME}
               </div>
               <div className="px-4 pb-2 text-sm text-text-secondary">
                 Answers are limited to the Ontario Building Code and include page-cited references.

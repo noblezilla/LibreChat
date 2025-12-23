@@ -16,6 +16,7 @@ import {
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
+import { ASSISTANT_ICON_URL, ASSISTANT_MODEL_LABEL } from '~/constants/branding';
 
 type EndpointIcon = {
   icon: React.ReactNode | React.JSX.Element;
@@ -126,6 +127,28 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     name: endpoint,
   };
 
+  const brandedIcon = ASSISTANT_ICON_URL ? (
+    <div className="relative flex h-6 w-6 items-center justify-center">
+      <div
+        title={ASSISTANT_MODEL_LABEL}
+        style={{
+          width: size,
+          height: size,
+        }}
+        className={cn('overflow-hidden rounded-full', props.className ?? '')}
+      >
+        <img
+          className="shadow-stroke h-full w-full object-cover"
+          src={ASSISTANT_ICON_URL}
+          alt={ASSISTANT_MODEL_LABEL}
+          style={{ height: '80', width: '80' }}
+        />
+      </div>
+    </div>
+  ) : (
+    <GPTIcon size={size * 0.5555555555555556} />
+  );
+
   const endpointIcons: {
     [key: string]: EndpointIcon | undefined;
   } = {
@@ -133,14 +156,14 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.agents]: agentsIcon,
     [EModelEndpoint.azureAssistants]: assistantsIcon,
     [EModelEndpoint.azureOpenAI]: {
-      icon: <AzureMinimalIcon size={size * 0.5555555555555556} />,
+      icon: brandedIcon,
       bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
-      name: 'ChatGPT',
+      name: ASSISTANT_MODEL_LABEL,
     },
     [EModelEndpoint.openAI]: {
-      icon: <GPTIcon size={size * 0.5555555555555556} />,
+      icon: brandedIcon,
       bg: getOpenAIColor(model),
-      name: 'ChatGPT',
+      name: ASSISTANT_MODEL_LABEL,
     },
     [EModelEndpoint.gptPlugins]: {
       icon: <Plugin size={size * 0.7} />,
