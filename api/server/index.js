@@ -40,13 +40,10 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 const app = express();
 
 function ensureOntarioConfig() {
-  const { NODE_ENV, ONTARIO_OPENAI_FILE_ID } = process.env;
-  if (NODE_ENV === 'production' && !ONTARIO_OPENAI_FILE_ID) {
-    throw new Error('ONTARIO_OPENAI_FILE_ID is required in production for Ontario-only mode');
-  }
-  if (!ONTARIO_OPENAI_FILE_ID) {
+  const { ONTARIO_OPENAI_FILE_ID, ONTARIO_OPENAI_VECTOR_STORE_ID } = process.env;
+  if (!ONTARIO_OPENAI_FILE_ID && !ONTARIO_OPENAI_VECTOR_STORE_ID) {
     logger.warn(
-      'ONTARIO_OPENAI_FILE_ID is not set; falling back to the default Ontario storage file ID',
+      'Ontario configuration: neither ONTARIO_OPENAI_FILE_ID nor ONTARIO_OPENAI_VECTOR_STORE_ID is set; falling back to defaults',
     );
   }
 }
