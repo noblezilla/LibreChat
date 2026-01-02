@@ -33,7 +33,7 @@ import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
-import { ASSISTANT_DISPLAY_NAME } from '~/constants/branding';
+import { ASSISTANT_MODEL_LABEL } from '~/constants/branding';
 
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
@@ -270,7 +270,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   onCompositionStart={handleCompositionStart}
                   onCompositionEnd={handleCompositionEnd}
                   id={mainTextareaId}
-                  placeholder={ASSISTANT_DISPLAY_NAME}
+                  placeholder={ASSISTANT_MODEL_LABEL}
                   tabIndex={0}
                   data-testid="text-input"
                   rows={1}
