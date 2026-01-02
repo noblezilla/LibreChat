@@ -67,8 +67,9 @@ bower_components/
 .flooignore
 
 #config file
-librechat.yaml
+# Keep example but allow committing a production config copy
 librechat.yml
+# librechat.yaml is now tracked; do not ignore it
 
 # Environment
 .npmrc
