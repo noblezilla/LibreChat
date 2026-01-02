@@ -4,6 +4,8 @@
 data-node
 meili_data*
 data/
+!client/src/data/
+!client/src/data/pdfs.json
 logs
 *.log
 
