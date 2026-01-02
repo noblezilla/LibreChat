@@ -144,3 +144,4 @@ helm/**/.values.yaml
 
 # Documents
 building-code
+app.yaml

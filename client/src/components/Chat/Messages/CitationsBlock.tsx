@@ -9,6 +9,17 @@ type PdfMeta = {
   pdfPath: string;
 };
 
+const assetBasePath = (import.meta.env.VITE_CLIENT_BASE_PATH ?? '').trim().replace(/\/$/, '');
+const resolvePdfPath = (pdfPath: string) => {
+  if (!pdfPath) {
+    return '';
+  }
+  if (/^https?:\/\//i.test(pdfPath)) {
+    return pdfPath;
+  }
+  return `${assetBasePath}${pdfPath.startsWith('/') ? '' : '/'}${pdfPath}`;
+};
+
 type CitationsBlockProps = {
   citations?: TCitation[];
   className?: string;
@@ -47,7 +58,7 @@ const CitationsBlock: React.FC<CitationsBlockProps> = ({ citations, className })
           page,
           meta,
           displayName,
-          pdfUrl: meta?.pdfPath ?? '',
+          pdfUrl: meta?.pdfPath ? resolvePdfPath(meta.pdfPath) : '',
         },
       };
     });
